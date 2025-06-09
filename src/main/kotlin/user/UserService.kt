@@ -1,4 +1,4 @@
-package com.berlin
+package com.berlin.user
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.Serializable
@@ -8,10 +8,16 @@ import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransacti
 import org.jetbrains.exposed.sql.transactions.transaction
 
 @Serializable
-data class RegisterUser(val name: String, val age: Int?, val email: String, val password: String)
+data class RegisterUser(val name: String, val age: Int? = 0, val email: String, val password: String)
 
 @Serializable
-data class UpdateUser(val name: String?, val age: Int? = 0, val email: String? = "", val password: String? = "", var avatar: String? = "")
+data class UpdateUser(
+    val name: String?,
+    val age: Int? = 0,
+    val email: String? = "",
+    val password: String? = "",
+    var avatar: String? = ""
+)
 
 @Serializable
 data class ResponseUser(val id: Int, val name: String, val age: Int?, val email: String?, var avatar: String?)
@@ -34,19 +40,37 @@ class UserService(database: Database) {
         }
     }
 
-    suspend fun create(user: RegisterUser): Int = dbQuery {
-        Users.insert {
+    suspend fun create(user: RegisterUser): ResponseUser = dbQuery {
+        val id = Users.insert {
             it[name] = user.name
             it[age] = user.age
             it[email] = user.email
             it[password] = user.password
         }[Users.id]
+        ResponseUser(id, user.name, user.age, user.email, "")
     }
 
     suspend fun read(id: Int): ResponseUser? {
         return dbQuery {
             Users.selectAll()
                 .where { Users.id eq id }
+                .map {
+                    ResponseUser(
+                        id = it[Users.id],
+                        name = it[Users.name],
+                        age = it[Users.age],
+                        email = it[Users.email],
+                        avatar = it[Users.avatar],
+                    )
+                }
+                .singleOrNull()
+        }
+    }
+
+    suspend fun read(email: String): ResponseUser? {
+        return dbQuery {
+            Users.selectAll()
+                .where { Users.email eq email }
                 .map {
                     ResponseUser(
                         id = it[Users.id],
@@ -89,6 +113,20 @@ class UserService(database: Database) {
                     avatar = it[Users.avatar],
                 )
             }
+        }
+    }
+
+    suspend fun login(email: String, password: String): ResponseUser? {
+        return dbQuery {
+            Users.selectAll().where { (Users.email eq email) and (Users.password eq password) }.map { row ->
+                ResponseUser(
+                    id = row[Users.id],
+                    name = row[Users.name],
+                    age = row[Users.age],
+                    email = row[Users.email],
+                    avatar = row[Users.avatar]
+                )
+            }.singleOrNull()
         }
     }
 

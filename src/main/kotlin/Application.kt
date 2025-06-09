@@ -1,5 +1,6 @@
 package com.berlin
 
+import com.berlin.user.configureUserRoutes
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.plugins.contentnegotiation.*
@@ -13,7 +14,7 @@ fun Application.module() {
         json() // 配置 JSON 序列化器，默认使用 kotlinx.serialization
     }
     configureSerialization()
-    configureDatabases()
+    configureUserRoutes()
     configureFrameworks()
     configureSecurity()
     configureRouting()
