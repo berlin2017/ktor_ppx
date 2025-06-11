@@ -86,7 +86,7 @@ fun Application.configurePostRoutes() {
                                     log.warn("图片数量超出限制 (9张)，已忽略后续图片: $originalFileName")
                                     part.dispose() // 记得 dispose 未处理的 part
                                 }
-                            } else if (contentType.startsWith("video/") || contentType == "application/octet-stream") {
+                            } else if (contentType.startsWith("video/")) {
                                 if (uploadedVideoFile == null) { // 只处理第一个视频
                                     val savedFile = saveFile(part)
                                     if (savedFile != null) {
