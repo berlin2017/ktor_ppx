@@ -5,8 +5,10 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
 import org.jetbrains.exposed.sql.transactions.transaction
+import kotlin.math.min
 
 class PostService(private val userService: UserService, database: Database) {
     object Posts : Table() {
@@ -24,9 +26,20 @@ class PostService(private val userService: UserService, database: Database) {
         override val primaryKey = PrimaryKey(id)
     }
 
+    object PostInteractions : Table() {
+        val id = integer("id").autoIncrement()
+        val postId = integer("postId").default(0)
+        val userId = integer("userId")
+        val timestamp = long("timestamp")
+        val type = integer("type").default(0)
+
+        override val primaryKey = PrimaryKey(id)
+    }
+
     init {
         transaction(database) {
             SchemaUtils.create(Posts)
+            SchemaUtils.create(PostInteractions)
         }
     }
 
@@ -95,7 +108,122 @@ class PostService(private val userService: UserService, database: Database) {
 //        }
 //    }
 
-    suspend fun get(page: Int, limit: Int): List<PostItem> {
+    suspend fun like(uid: Int, pid: Int): Boolean =
+        dbQuery {
+            val postItem = Posts.selectAll().where { Posts.id eq pid }.singleOrNull()
+            val userInfo = userService.read(id = uid)
+            if (postItem == null || userInfo == null) {
+                return@dbQuery false
+            }
+            val postInteraction =
+                PostInteractions.selectAll()
+                    .where { (PostInteractions.userId eq uid) and (PostInteractions.postId eq pid) }
+                    .firstOrNull()
+            if (postInteraction != null) {
+                if (postInteraction[PostInteractions.type] == PostInteraction.LIKE.value) {
+                    return@dbQuery false
+                } else if (postInteraction[PostInteractions.type] == PostInteraction.DISLIKE.value) {
+                    PostInteractions.update {
+                        it[type] = PostInteraction.LIKE.value
+                        it[timestamp] = System.currentTimeMillis()
+                    }
+                    Posts.update({ Posts.id eq pid }) {
+                        it[unLikesCount] = min(postItem[unLikesCount] - 1, 0)
+                    } > 0
+                }
+
+            } else {
+                PostInteractions.insert {
+                    it[userId] = uid
+                    it[timestamp] = System.currentTimeMillis()
+                    it[postId] = pid
+                    it[type] = PostInteraction.LIKE.value
+                }[PostInteractions.id]
+            }
+            return@dbQuery Posts.update({ Posts.id eq pid }) {
+                it[likesCount] = postItem[likesCount] + 1
+            } > 0
+        }
+
+    suspend fun unlike(uid: Int, pid: Int): Boolean =
+        dbQuery {
+            val postItem = Posts.selectAll().where { Posts.id eq pid }.singleOrNull()
+            val userInfo = userService.read(id = uid)
+            if (postItem == null || userInfo == null) {
+                return@dbQuery false
+            }
+            val postInteraction =
+                PostInteractions.selectAll()
+                    .where { (PostInteractions.userId eq uid) and (PostInteractions.postId eq pid) }
+                    .firstOrNull()
+
+            if (postInteraction != null && postInteraction[PostInteractions.type] == PostInteraction.LIKE.value) {
+                PostInteractions.deleteWhere { PostInteractions.id eq postInteraction[id] }
+            }
+            return@dbQuery Posts.update({ Posts.id eq pid }) {
+                it[likesCount] = min(postItem[likesCount] - 1, 0)
+            } > 0
+        }
+
+    suspend fun dislike(uid: Int, pid: Int): Boolean =
+        dbQuery {
+            val postItem = Posts.selectAll().where { Posts.id eq pid }.singleOrNull()
+            val userInfo = userService.read(id = uid)
+            if (postItem == null || userInfo == null) {
+                return@dbQuery false
+            }
+            val postInteraction =
+                PostInteractions.selectAll()
+                    .where { (PostInteractions.userId eq uid) and (PostInteractions.postId eq pid) }
+                    .firstOrNull()
+            if (postInteraction != null) {
+                if (postInteraction[PostInteractions.type] == PostInteraction.DISLIKE.value) {
+                    return@dbQuery false
+                } else if (postInteraction[PostInteractions.type] == PostInteraction.LIKE.value) {
+                    PostInteractions.update {
+                        it[type] = PostInteraction.DISLIKE.value
+                        it[timestamp] = System.currentTimeMillis()
+                    }
+                    Posts.update({ Posts.id eq pid }) {
+                        it[likesCount] = min(postItem[likesCount] - 1, 0)
+                    } > 0
+                }
+
+            } else {
+                PostInteractions.insert {
+                    it[userId] = uid
+                    it[timestamp] = System.currentTimeMillis()
+                    it[postId] = pid
+                    it[type] = PostInteraction.DISLIKE.value
+                }[PostInteractions.id]
+            }
+            return@dbQuery Posts.update({ Posts.id eq pid }) {
+                it[unLikesCount] = postItem[unLikesCount] + 1
+            } > 0
+        }
+
+    suspend fun undislike(uid: Int, pid: Int): Boolean =
+        dbQuery {
+            val postItem = Posts.selectAll().where { Posts.id eq pid }.singleOrNull()
+            val userInfo = userService.read(id = uid)
+            if (postItem == null || userInfo == null) {
+                return@dbQuery false
+            }
+            val postInteraction =
+                PostInteractions.selectAll()
+                    .where { (PostInteractions.userId eq uid) and (PostInteractions.postId eq pid) }
+                    .firstOrNull()
+
+            if (postInteraction != null && postInteraction[PostInteractions.type] == PostInteraction.DISLIKE.value) {
+                PostInteractions.deleteWhere { PostInteractions.id eq postInteraction[id] }
+            }
+
+            return@dbQuery Posts.update({ Posts.id eq pid }) {
+                it[unLikesCount] = min(postItem[unLikesCount] - 1, 0)
+            } > 0
+        }
+
+    suspend fun get(uid: Int = -1, page: Int, limit: Int): List<PostItem> {
         return dbQuery {
             Posts.selectAll()
                 .orderBy(Posts.timestamp, SortOrder.DESC)
@@ -103,6 +231,18 @@ class PostService(private val userService: UserService, database: Database) {
                 .map {
                     val userId = it[Posts.userId]
                     val userInfo = userService.read(id = userId)
+                    var isLiked = false
+                    var isUnLiked = false
+                    if (uid != -1) {
+                        val postInteraction =
+                            PostInteractions.selectAll()
+                                .where { (PostInteractions.postId eq it[Posts.id]) and (PostInteractions.userId eq uid) }
+                                .firstOrNull()
+                        isLiked =
+                            postInteraction != null && postInteraction[PostInteractions.type] == PostInteraction.LIKE.value
+                        isUnLiked =
+                            postInteraction != null && postInteraction[PostInteractions.type] == PostInteraction.DISLIKE.value
+                    }
 
                     val listStringType = object : TypeToken<List<String>>() {}.type
                     PostItem(
@@ -115,11 +255,14 @@ class PostService(private val userService: UserService, database: Database) {
                         userInfo = userInfo,
                         timestamp = it[Posts.timestamp],
                         postType = it[Posts.postType],
-                        videoUrl = it[Posts.videoUrl]
+                        videoUrl = it[Posts.videoUrl],
+                        isLiked = isLiked,
+                        isUnliked = isUnLiked,
                     )
                 }
         }
     }
+
 
     private suspend fun <T> dbQuery(block: suspend () -> T): T =
         newSuspendedTransaction(Dispatchers.IO) { block() }

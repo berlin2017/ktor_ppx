@@ -149,9 +149,55 @@ fun Application.configurePostRoutes() {
         get("/posts") {
             val page = call.parameters["page"]?.toInt() ?: 0
             val count = call.parameters["limit"]?.toInt() ?: 10
-            val postItems = postService.get(page, count)
+            val userId = call.parameters["userId"]?.toInt() ?: -1
+            val postItems = postService.get(userId, page, count)
             call.respond(HttpStatusCode.Created, postItems)
         }
+
+        post("/posts_like") {
+            val userId = call.parameters["userId"]?.toInt() ?: 0
+            val postId = call.parameters["postId"]?.toInt() ?: 10
+            val success = postService.like(userId, postId)
+            if (success) {
+                call.respond(HttpStatusCode.OK)
+            } else {
+                call.respond(HttpStatusCode.NotFound, "用户或内容不存在!")
+            }
+        }
+
+        post("/posts_unlike") {
+            val userId = call.parameters["userId"]?.toInt() ?: 0
+            val postId = call.parameters["postId"]?.toInt() ?: 10
+            val success = postService.unlike(userId, postId)
+            if (success) {
+                call.respond(HttpStatusCode.OK)
+            } else {
+                call.respond(HttpStatusCode.NotFound, "用户或内容不存在!")
+            }
+        }
+
+        post("/posts_dislike") {
+            val userId = call.parameters["userId"]?.toInt() ?: 0
+            val postId = call.parameters["postId"]?.toInt() ?: 10
+            val success = postService.dislike(userId, postId)
+            if (success) {
+                call.respond(HttpStatusCode.OK)
+            } else {
+                call.respond(HttpStatusCode.NotFound, "用户或内容不存在!")
+            }
+        }
+
+        post("/posts_undislike") {
+            val userId = call.parameters["userId"]?.toInt() ?: 0
+            val postId = call.parameters["postId"]?.toInt() ?: 10
+            val success = postService.undislike(userId, postId)
+            if (success) {
+                call.respond(HttpStatusCode.OK)
+            } else {
+                call.respond(HttpStatusCode.NotFound, "用户或内容不存在!")
+            }
+        }
+
 
 //        // Read user
 //        get("/users/{id}") {
