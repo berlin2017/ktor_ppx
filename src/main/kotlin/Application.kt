@@ -2,6 +2,7 @@ package com.berlin
 
 import com.berlin.post.configurePostRoutes
 import com.berlin.user.configureUserRoutes
+import com.berlin.videoparse.configVideoParer
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.plugins.contentnegotiation.*
@@ -23,4 +24,6 @@ fun Application.module() {
     configureSecurity()
     configureRouting()
     configureUpload()
+
+    configVideoParer()
 }
