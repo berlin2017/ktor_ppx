@@ -149,9 +149,11 @@ fun Application.configurePostRoutes() {
         get("/posts") {
             val page = call.parameters["page"]?.toInt() ?: 0
             val count = call.parameters["limit"]?.toInt() ?: 10
-            val userId = call.parameters["userId"]?.toInt() ?: -1
-            val postItems = postService.get(userId, page, count)
-            call.respond(HttpStatusCode.Created, postItems)
+            val userId = call.parameters["userId"]?.toIntOrNull()
+            val categoryId = call.parameters["categoryId"]?.toIntOrNull()
+
+            val postItems = postService.get(userId, categoryId, page, count)
+            call.respond(HttpStatusCode.OK, postItems)
         }
 
         post("/posts_like") {

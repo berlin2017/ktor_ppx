@@ -21,6 +21,7 @@ class PostService(private val userService: UserService, database: Database) {
         val commentsCount = integer("commentsCount").default(0)
         val postType = integer("postType").default(0)
         val userId = integer("userId")
+        val categoryId = integer("categoryId").nullable()
         val timestamp = long("timestamp")
 
         override val primaryKey = PrimaryKey(id)
@@ -223,17 +224,25 @@ class PostService(private val userService: UserService, database: Database) {
             } > 0
         }
 
-    suspend fun get(uid: Int = -1, page: Int, limit: Int): List<PostItem> {
+    suspend fun get(uid: Int? = null, categoryId: Int? = null, page: Int, limit: Int): List<PostItem> {
         return dbQuery {
-            Posts.selectAll()
+            val query = Posts.selectAll()
                 .orderBy(Posts.timestamp, SortOrder.DESC)
-                .limit(limit).offset(start = (page * limit).toLong())
+
+            if (uid != null) {
+                query.andWhere { Posts.userId eq uid }
+            }
+            if (categoryId != null && categoryId != 0) {
+                query.andWhere { Posts.categoryId eq categoryId }
+            }
+
+            query.limit(count = limit).offset(start = (page * limit).toLong())
                 .map {
                     val userId = it[Posts.userId]
                     val userInfo = userService.read(id = userId)
                     var isLiked = false
                     var isUnLiked = false
-                    if (uid != -1) {
+                    if (uid != null) {
                         val postInteraction =
                             PostInteractions.selectAll()
                                 .where { (PostInteractions.postId eq it[Posts.id]) and (PostInteractions.userId eq uid) }
